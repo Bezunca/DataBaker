@@ -81,13 +81,13 @@ RUN curl -# -L "https://raw.githubusercontent.com/HeavenVolkoff/format.sh/master
         | xargs -r /opt/bin/pip install -U --ignore-installed
 
 # Install project and it's dependecies
-RUN /opt/bin/pip install -U .
+RUN /opt/bin/pip install -U . --ignore-installed
 
 # Fix python executables shebang
 RUN find /opt/bin -type f -exec sed -i '1 s/^#!.*python.*/#!\/usr\/local\/bin\/python3/' {} \;
 
-# Remove any pre-compiled file from venv
-RUN find -type d -name "__pycache__" -print0 | xargs -r -0 rm -r
+# Remove any pre-compiled file from python installation
+RUN find /opt -type d -name "__pycache__" -print0 | xargs -r -0 rm -r
 
 # === Stage 2 - Setup runtime ==================================================
 FROM debian:buster-slim
