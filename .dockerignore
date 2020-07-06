@@ -1,0 +1,9 @@
+.*
+
+logs
+docs
+dist
+build
+tools
+docker
+debug
