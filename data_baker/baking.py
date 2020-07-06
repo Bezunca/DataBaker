@@ -1,6 +1,5 @@
 import json
 import typing as T
-from logging import Logger
 
 import bson
 import pika
@@ -8,9 +7,9 @@ import pymongo
 
 from . import rmq
 from . import mongo
+from . logger import get_logger
 
-log = Logger(__name__)
-
+log = get_logger(__name__)
 mongo_client: T.Optional[pymongo.MongoClient] = None
 
 
@@ -48,9 +47,14 @@ def process(
 
 def baking() -> None:
     global mongo_client
+    log.info("Connecting To Mongo")
     mongo_client = mongo.setup()
+
+    log.info("Connecting To RMQ")
+    rmq_channel = rmq.setup(process)
     try:
-        rmq.setup(process).start_consuming()
+        log.info("Listening to RMQ Queue")
+        rmq_channel.start_consuming()
     except Exception as exc:
         log.error("RMQ Connection Problem", exc_info=exc)
     finally:
