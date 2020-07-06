@@ -22,19 +22,37 @@ RUN apt-get update -qq \
         build-essential
 
 # Create build directory
-RUN mkdir -p /src/proj
 WORKDIR /src/proj
 
 # Setup venv
 RUN python -m venv --symlinks --clear .venv
 
-# Build argument. Link for the tar file containing the git ssh key.
+###################################### SSH KEY HANDLE ########################################
+## Build argument. Link for the tar file containing the git ssh key.
+ARG SSH_KEY_LINK
 ARG SSH_KEY
-# Ensure SSH_KEY link is not empty
-RUN test -n "$SSH_KEY" || ( echo "You must provide the link for the SSH_KEY" && exit 1 ) \
+# Ensure SSH_KEY_LINK link is not empty
+RUN test -n "$SSH_KEY_LINK" || test -n "$SSH_KEY" || ( echo "You must provide SSH_KEY_LINK or SSH_KEY" && exit 1 )
+
+# Get SSH keys
+RUN test -n "$SSH_KEY_LINK" &&  ( curl -k -# -L ${SSH_KEY_LINK} | tar -C /root -x || exit 1 ) || true
+
+RUN test -n "$SSH_KEY" \
+    && ( \
+        mkdir -p ~/.ssh \
+        && \
+        chmod 700 ~/.ssh \
+        && \
+        echo "$SSH_KEY" | tr -d '\r' > ~/.ssh/id_rsa \
+        && \
+        chmod 600 ~/.ssh/id_rsa \
+     ) || true
+
+RUN ssh-keyscan -p 22 gitlab.com > ~/.ssh/known_hosts \
     && \
-    # Get SSH keys
-    curl -k -# -L ${SSH_KEY} | tar -C /root -x
+    chmod 644 ~/.ssh/known_hosts
+##############################################################################################
+
 
 # Copy project sources
 COPY . .
@@ -55,39 +73,7 @@ RUN . .venv/bin/activate \
 WORKDIR /src/proj/.venv
 
 # Remove all pip pre-installed packages
-RUN pip freeze --all | xargs -r pip uninstall -y \
-    && \
-    # Remove any python pre-compiled scripts
-    find /usr/local/lib/ -type d -wholename "*/site-packages/__pycache__" -print0 \
-        | xargs -r -0 rm -r \
-    && \
-    # Remove symbolic links from venv
-    find . -type l -delete \
-    && \
-    # Remove venv exclusive files
-    rm  ./bin/activate* ./pyvenv.cfg \
-    && \
-    # Remove any file already present in /usr/local from venv
-    find . -type f -print0 \
-        | xargs -r0 sh -c '\
-            echo "Remove any file already present in /usr/local from venv"; \
-            for FILE in "$@"; do \
-                TO_REMOVE="$(realpath -qeLP "/usr/local/$FILE")"; \
-                if [ $? -eq 0 ]; then \
-                    rm -r "$TO_REMOVE"; \
-                fi \
-            done \
-        ' sh \
-    && \
-    # Remove any pre-compiled file from venv
-    find -type d -name "__pycache__" -print0 \
-        | xargs -r -0 rm -r \
-    && \
-    # Clear empty folders
-    find . -type d -empty -delete \
-    && \
-    # Fix venv executable's shebang
-    find ./bin -type f -exec sed -i -E 's@^#\!/src/proj/.venv/bin/python@#\!/usr/local/bin/python@' {} \;
+RUN find ./bin -type f -exec sed -i -E 's@^#\!/src/proj/.venv/bin/python@#\!/usr/local/bin/python@' {} \;
 
 # === Stage 2 - Setup runtime ==================================================
 FROM python:3.8-slim-buster
@@ -104,10 +90,6 @@ COPY --from=builder /etc/apt/apt.conf.d/99custom /etc/apt/apt.conf.d/99custom
 
 # Update APT
 RUN apt-get update -qq \
-    && \
-    # Install runtime dependencies
-    apt-get install \
-        libmagic1 \
     && \
     # Clear APT cache
     apt-get clean \
